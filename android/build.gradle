@@ -2,14 +2,15 @@ group 'io.eddayy.flutter_star_prnt'
 version '1.0-SNAPSHOT'
 
 buildscript {
-    ext.kotlin_version = '1.3.50'
+    ext.kotlin_version = '1.8.22' // Обновлено
     repositories {
         google()
-        jcenter()
+        mavenCentral() // jcenter() мертв, заменяем на mavenCentral()
     }
 
     dependencies {
-        classpath 'com.android.tools.build:gradle:3.5.0'
+        // Обновлено для совместимости с новыми версиями Android Studio/Flutter
+        classpath 'com.android.tools.build:gradle:7.3.0' 
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
     }
 }
@@ -17,7 +18,7 @@ buildscript {
 rootProject.allprojects {
     repositories {
         google()
-        jcenter()
+        mavenCentral()
     }
 }
 
@@ -25,24 +26,39 @@ apply plugin: 'com.android.library'
 apply plugin: 'kotlin-android'
 
 android {
-    compileSdkVersion 28
+    // Обновлено до 34 (Android 14), так как Google Play требует минимум 33-34
+    compileSdkVersion 34
 
     sourceSets {
         main.java.srcDirs += 'src/main/kotlin'
     }
+
     defaultConfig {
-        minSdkVersion 16
+        minSdkVersion 21 // Поднято до 21 для лучшей поддержки библиотек
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
+
     lintOptions {
         disable 'InvalidPackage'
+    }
+
+    // Добавлено для совместимости с Java 8 (требуется для нового Kotlin)
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    kotlinOptions {
+        jvmTarget = '1.8'
     }
 }
 
 dependencies {
-    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
-    implementation 'androidx.annotation:annotation:1.1.0'
-    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.3.7'
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
+    implementation 'androidx.annotation:annotation:1.6.0' // Обновлено
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.1' // Обновлено
+    
+    // Эти библиотеки оставляем, так как они специфичны для Star PRNT
     implementation 'com.starmicronics:stario:2.8.0'
     implementation 'com.starmicronics:starioextension:1.14.0'
 }
