@@ -1,4 +1,3 @@
-```kotlin
 package io.eddayy.flutter_star_prnt
 
 import android.content.Context
@@ -17,11 +16,13 @@ import com.starmicronics.stario.PortInfo
 import com.starmicronics.stario.StarIOPort
 import com.starmicronics.stario.StarPrinterStatus
 import com.starmicronics.starioextension.ICommandBuilder
+import com.starmicronics.starioextension.ICommandBuilder.*
 import com.starmicronics.starioextension.IConnectionCallback
 import com.starmicronics.starioextension.StarIoExt
 import com.starmicronics.starioextension.StarIoExt.Emulation
 import com.starmicronics.starioextension.StarIoExtManager
 import io.flutter.embedding.engine.plugins.FlutterPlugin
+import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler
@@ -29,21 +30,33 @@ import io.flutter.plugin.common.MethodChannel.Result
 import java.nio.charset.Charset
 import java.nio.charset.UnsupportedCharsetException
 
-/** FlutterStarPrntPlugin (v2 embedding) */
+/** FlutterStarPrntPlugin (v2 embedding only) */
 class FlutterStarPrntPlugin : FlutterPlugin, MethodCallHandler {
 
-  private var starIoExtManager: StarIoExtManager? = null
-  private lateinit var applicationContext: Context
-  private lateinit var channel: MethodChannel
+  private var channel: MethodChannel? = null
+  protected var starIoExtManager: StarIoExtManager? = null
+
+  companion object {
+    protected lateinit var applicationContext: Context
+
+    @JvmStatic
+    fun setupPlugin(messenger: BinaryMessenger, context: Context) {
+      applicationContext = context.applicationContext
+      val ch = MethodChannel(messenger, "flutter_star_prnt")
+      ch.setMethodCallHandler(FlutterStarPrntPlugin())
+    }
+  }
 
   override fun onAttachedToEngine(@NonNull binding: FlutterPlugin.FlutterPluginBinding) {
     applicationContext = binding.applicationContext
+
     channel = MethodChannel(binding.binaryMessenger, "flutter_star_prnt")
-    channel.setMethodCallHandler(this)
+    channel?.setMethodCallHandler(this)
   }
 
   override fun onDetachedFromEngine(@NonNull binding: FlutterPlugin.FlutterPluginBinding) {
-    channel.setMethodCallHandler(null)
+    channel?.setMethodCallHandler(null)
+    channel = null
   }
 
   override fun onMethodCall(@NonNull call: MethodCall, @NonNull rawResult: Result) {
@@ -51,7 +64,7 @@ class FlutterStarPrntPlugin : FlutterPlugin, MethodCallHandler {
     Thread(MethodRunner(call, result)).start()
   }
 
-  private inner class MethodRunner(call: MethodCall, result: Result) : Runnable {
+  inner class MethodRunner(call: MethodCall, result: Result) : Runnable {
     private val call: MethodCall = call
     private val result: Result = result
 
@@ -60,13 +73,12 @@ class FlutterStarPrntPlugin : FlutterPlugin, MethodCallHandler {
         "portDiscovery" -> portDiscovery(call, result)
         "checkStatus" -> checkStatus(call, result)
         "print" -> print(call, result)
-        "connect" -> connect(call, result)
         else -> result.notImplemented()
       }
     }
   }
 
-  private class MethodResultWrapper(methodResult: Result) : Result {
+  class MethodResultWrapper(methodResult: Result) : Result {
     private val methodResult: Result = methodResult
     private val handler: Handler = Handler(Looper.getMainLooper())
 
@@ -83,11 +95,10 @@ class FlutterStarPrntPlugin : FlutterPlugin, MethodCallHandler {
     }
   }
 
-  private fun portDiscovery(@NonNull call: MethodCall, @NonNull result: Result) {
-    val strInterface: String = call.argument<String>("type") ?: "All"
-    val response: MutableList<Map<String, String>>
+  fun portDiscovery(@NonNull call: MethodCall, @NonNull result: Result) {
+    val strInterface: String = call.argument<String>("type") as String
     try {
-      response =
+      val response: MutableList<Map<String, String>> =
         when (strInterface) {
           "LAN" -> getPortDiscovery("LAN")
           "Bluetooth" -> getPortDiscovery("Bluetooth")
@@ -100,9 +111,9 @@ class FlutterStarPrntPlugin : FlutterPlugin, MethodCallHandler {
     }
   }
 
-  private fun checkStatus(@NonNull call: MethodCall, @NonNull result: Result) {
-    val portName: String = call.argument<String>("portName") ?: ""
-    val emulation: String = call.argument<String>("emulation") ?: ""
+  fun checkStatus(@NonNull call: MethodCall, @NonNull result: Result) {
+    val portName: String = call.argument<String>("portName") as String
+    val emulation: String = call.argument<String>("emulation") as String
 
     var port: StarIOPort? = null
     try {
@@ -145,55 +156,60 @@ class FlutterStarPrntPlugin : FlutterPlugin, MethodCallHandler {
     }
   }
 
-  private fun connect(@NonNull call: MethodCall, @NonNull result: Result) {
-    val portName: String = call.argument<String>("portName") ?: ""
-    val emulation: String = call.argument<String>("emulation") ?: ""
-    val hasBarcodeReader: Boolean = call.argument<Boolean>("hasBarcodeReader") ?: false
+  // Not exposed currently (kept from old code)
+  fun connect(@NonNull call: MethodCall, @NonNull result: Result) {
+    val portName: String = call.argument<String>("portName") as String
+    val emulation: String = call.argument<String>("emulation") as String
+    val hasBarcodeReader: Boolean? = call.argument<Boolean>("hasBarcodeReader") as Boolean?
 
     val portSettings: String? = getPortSettingsOption(emulation)
     try {
-      val existingManager = this.starIoExtManager
-      if (existingManager?.port != null) {
-        existingManager.disconnect(object : IConnectionCallback {
+      var mgr = this.starIoExtManager
+
+      if (mgr?.port != null) {
+        mgr.disconnect(object : IConnectionCallback {
           override fun onConnected(connectResult: IConnectionCallback.ConnectResult) {}
           override fun onDisconnected() {}
         })
       }
 
-      val manager =
+      mgr =
         StarIoExtManager(
-          if (hasBarcodeReader) StarIoExtManager.Type.WithBarcodeReader else StarIoExtManager.Type.Standard,
+          if (hasBarcodeReader == true) StarIoExtManager.Type.WithBarcodeReader
+          else StarIoExtManager.Type.Standard,
           portName,
           portSettings,
           10000,
           applicationContext
         )
 
-      this.starIoExtManager = manager
+      this.starIoExtManager = mgr
 
-      manager.connect(object : IConnectionCallback {
-        override fun onConnected(connectResult: IConnectionCallback.ConnectResult) {
-          if (connectResult == IConnectionCallback.ConnectResult.Success ||
-            connectResult == IConnectionCallback.ConnectResult.AlreadyConnected
-          ) {
-            result.success("Printer Connected")
-          } else {
-            result.error("CONNECT_ERROR", "Error Connecting to the printer", null)
+      mgr.connect(
+        object : IConnectionCallback {
+          override fun onConnected(connectResult: IConnectionCallback.ConnectResult) {
+            if (connectResult == IConnectionCallback.ConnectResult.Success ||
+              connectResult == IConnectionCallback.ConnectResult.AlreadyConnected
+            ) {
+              result.success("Printer Connected")
+            } else {
+              result.error("CONNECT_ERROR", "Error Connecting to the printer", null)
+            }
           }
-        }
 
-        override fun onDisconnected() {}
-      })
+          override fun onDisconnected() {}
+        }
+      )
     } catch (e: Exception) {
       result.error("CONNECT_ERROR", e.message, e)
     }
   }
 
-  private fun print(@NonNull call: MethodCall, @NonNull result: Result) {
-    val portName: String = call.argument<String>("portName") ?: ""
-    val emulation: String = call.argument<String>("emulation") ?: ""
+  fun print(@NonNull call: MethodCall, @NonNull result: Result) {
+    val portName: String = call.argument<String>("portName") as String
+    val emulation: String = call.argument<String>("emulation") as String
     val printCommands: ArrayList<Map<String, Any>> =
-      call.argument<ArrayList<Map<String, Any>>>("printCommands") ?: arrayListOf()
+      call.argument<ArrayList<Map<String, Any>>>("printCommands") as ArrayList<Map<String, Any>>
 
     if (printCommands.isEmpty()) {
       val json: MutableMap<String, Any?> = mutableMapOf()
@@ -248,22 +264,19 @@ class FlutterStarPrntPlugin : FlutterPlugin, MethodCallHandler {
     for (discovery in arrayDiscovery) {
       val port: MutableMap<String, String> = mutableMapOf()
 
-      if (discovery.portName.startsWith("BT:")) {
-        port["portName"] = "BT:${discovery.macAddress}"
-      } else {
-        port["portName"] = discovery.portName
-      }
+      if (discovery.portName.startsWith("BT:")) port["portName"] = "BT:" + discovery.macAddress
+      else port["portName"] = discovery.portName
 
-      if (discovery.macAddress.isNotEmpty()) {
+      if (discovery.macAddress != "") {
         port["macAddress"] = discovery.macAddress
 
         if (discovery.portName.startsWith("BT:")) {
           port["modelName"] = discovery.portName
-        } else if (discovery.modelName.isNotEmpty()) {
+        } else if (discovery.modelName != "") {
           port["modelName"] = discovery.modelName
         }
       } else if (interfaceName == "USB" || interfaceName == "All") {
-        if (discovery.modelName.isNotEmpty()) {
+        if (discovery.modelName != "") {
           port["modelName"] = discovery.modelName
         }
         if (discovery.usbSerialNumber != " SN:") {
@@ -372,16 +385,14 @@ class FlutterStarPrntPlugin : FlutterPlugin, MethodCallHandler {
           builder.appendLogo(getLogoSize(it["logoSize"] as String), it["appendLogo"] as Int)
         else builder.appendLogo(getLogoSize("Normal"), it["appendLogo"] as Int)
       } else if (it.containsKey("appendBarcode")) {
-        val barcodeSymbology: ICommandBuilder.BarcodeSymbology =
+        val barcodeSymbology: BarcodeSymbology =
           if (it.containsKey("BarcodeSymbology")) getBarcodeSymbology(it["BarcodeSymbology"].toString())
           else getBarcodeSymbology("Code128")
-        val barcodeWidth: ICommandBuilder.BarcodeWidth =
+        val barcodeWidth: BarcodeWidth =
           if (it.containsKey("BarcodeWidth")) getBarcodeWidth(it["BarcodeWidth"].toString())
           else getBarcodeWidth("Mode2")
-        val height: Int =
-          if (it.containsKey("height")) it["height"].toString().toInt() else 40
-        val hri: Boolean =
-          if (it.containsKey("hri")) it["hri"].toString().toBoolean() else true
+        val height: Int = if (it.containsKey("height")) it["height"].toString().toInt() else 40
+        val hri: Boolean = if (it.containsKey("hri")) it["hri"].toString().toBoolean() else true
 
         if (it.containsKey("absolutePosition")) {
           builder.appendBarcodeWithAbsolutePosition(
@@ -411,20 +422,17 @@ class FlutterStarPrntPlugin : FlutterPlugin, MethodCallHandler {
           )
         }
       } else if (it.containsKey("appendBitmap")) {
-        val diffusion: Boolean =
-          if (it.containsKey("diffusion")) it["diffusion"].toString().toBoolean() else true
-        val width: Int =
-          if (it.containsKey("width")) it["width"].toString().toInt() else 576
-        val bothScale: Boolean =
-          if (it.containsKey("bothScale")) it["bothScale"].toString().toBoolean() else true
-        val rotation: ICommandBuilder.BitmapConverterRotation =
+        val diffusion: Boolean = if (it.containsKey("diffusion")) it["diffusion"].toString().toBoolean() else true
+        val width: Int = if (it.containsKey("width")) it["width"].toString().toInt() else 576
+        val bothScale: Boolean = if (it.containsKey("bothScale")) it["bothScale"].toString().toBoolean() else true
+        val rotation: BitmapConverterRotation =
           if (it.containsKey("rotation")) getConverterRotation(it["rotation"].toString())
           else getConverterRotation("Normal")
+
         try {
           val bitmap: Bitmap? =
             if (URLUtil.isValidUrl(it["appendBitmap"].toString())) {
               val imageUri: Uri = Uri.parse(it["appendBitmap"].toString())
-              @Suppress("DEPRECATION")
               MediaStore.Images.Media.getBitmap(context.contentResolver, imageUri)
             } else {
               BitmapFactory.decodeFile(it["appendBitmap"].toString())
@@ -433,20 +441,12 @@ class FlutterStarPrntPlugin : FlutterPlugin, MethodCallHandler {
           if (bitmap != null) {
             if (it.containsKey("absolutePosition")) {
               builder.appendBitmapWithAbsolutePosition(
-                bitmap,
-                diffusion,
-                width,
-                bothScale,
-                rotation,
+                bitmap, diffusion, width, bothScale, rotation,
                 it["absolutePosition"].toString().toInt()
               )
             } else if (it.containsKey("alignment")) {
               builder.appendBitmapWithAlignment(
-                bitmap,
-                diffusion,
-                width,
-                bothScale,
-                rotation,
+                bitmap, diffusion, width, bothScale, rotation,
                 getAlignment(it["alignment"].toString())
               )
             } else {
@@ -457,40 +457,35 @@ class FlutterStarPrntPlugin : FlutterPlugin, MethodCallHandler {
           Log.e("FlutterStarPrnt", "appendBitmap failed", e)
         }
       } else if (it.containsKey("appendBitmapText")) {
-        val fontSize: Float =
-          if (it.containsKey("fontSize")) it["fontSize"].toString().toFloat() else 25f
-        val diffusion: Boolean =
-          if (it.containsKey("diffusion")) it["diffusion"].toString().toBoolean() else true
-        val width: Int =
-          if (it.containsKey("width")) it["width"].toString().toInt() else 576
-        val bothScale: Boolean =
-          if (it.containsKey("bothScale")) it["bothScale"].toString().toBoolean() else true
+        val fontSize: Float = if (it.containsKey("fontSize")) it["fontSize"].toString().toFloat() else 25f
+        val diffusion: Boolean = if (it.containsKey("diffusion")) it["diffusion"].toString().toBoolean() else true
+        val width: Int = if (it.containsKey("width")) it["width"].toString().toInt() else 576
+        val bothScale: Boolean = if (it.containsKey("bothScale")) it["bothScale"].toString().toBoolean() else true
         val text: String = it["appendBitmapText"].toString()
         val typeface: Typeface = Typeface.create(Typeface.MONOSPACE, Typeface.NORMAL)
         val bitmap: Bitmap = createBitmapFromText(text, fontSize, width, typeface)
-        val rotation: ICommandBuilder.BitmapConverterRotation =
+        val rotation: BitmapConverterRotation =
           if (it.containsKey("rotation")) getConverterRotation(it["rotation"].toString())
           else getConverterRotation("Normal")
 
         if (it.containsKey("absolutePosition")) {
           builder.appendBitmapWithAbsolutePosition(
-            bitmap, diffusion, width, bothScale, rotation, it["absolutePosition"] as Int
+            bitmap, diffusion, width, bothScale, rotation,
+            it["absolutePosition"] as Int
           )
         } else if (it.containsKey("alignment")) {
           builder.appendBitmapWithAlignment(
-            bitmap, diffusion, width, bothScale, rotation, getAlignment(it["alignment"].toString())
+            bitmap, diffusion, width, bothScale, rotation,
+            getAlignment(it["alignment"].toString())
           )
         } else {
           builder.appendBitmap(bitmap, diffusion, width, bothScale, rotation)
         }
       } else if (it.containsKey("appendBitmapByteArray")) {
-        val diffusion: Boolean =
-          if (it.containsKey("diffusion")) it["diffusion"].toString().toBoolean() else true
-        val width: Int =
-          if (it.containsKey("width")) it["width"].toString().toInt() else 576
-        val bothScale: Boolean =
-          if (it.containsKey("bothScale")) it["bothScale"].toString().toBoolean() else true
-        val rotation: ICommandBuilder.BitmapConverterRotation =
+        val diffusion: Boolean = if (it.containsKey("diffusion")) it["diffusion"].toString().toBoolean() else true
+        val width: Int = if (it.containsKey("width")) it["width"].toString().toInt() else 576
+        val bothScale: Boolean = if (it.containsKey("bothScale")) it["bothScale"].toString().toBoolean() else true
+        val rotation: BitmapConverterRotation =
           if (it.containsKey("rotation")) getConverterRotation(it["rotation"].toString())
           else getConverterRotation("Normal")
 
@@ -501,11 +496,13 @@ class FlutterStarPrntPlugin : FlutterPlugin, MethodCallHandler {
           if (bitmap != null) {
             if (it.containsKey("absolutePosition")) {
               builder.appendBitmapWithAbsolutePosition(
-                bitmap, diffusion, width, bothScale, rotation, it["absolutePosition"].toString().toInt()
+                bitmap, diffusion, width, bothScale, rotation,
+                it["absolutePosition"].toString().toInt()
               )
             } else if (it.containsKey("alignment")) {
               builder.appendBitmapWithAlignment(
-                bitmap, diffusion, width, bothScale, rotation, getAlignment(it["alignment"].toString())
+                bitmap, diffusion, width, bothScale, rotation,
+                getAlignment(it["alignment"].toString())
               )
             } else {
               builder.appendBitmap(bitmap, diffusion, width, bothScale, rotation)
@@ -533,48 +530,47 @@ class FlutterStarPrntPlugin : FlutterPlugin, MethodCallHandler {
 
   private fun getCodePageType(codePageType: String): ICommandBuilder.CodePageType {
     return when (codePageType) {
-      "CP437" -> ICommandBuilder.CodePageType.CP437
-      "CP737" -> ICommandBuilder.CodePageType.CP737
-      "CP772" -> ICommandBuilder.CodePageType.CP772
-      "CP774" -> ICommandBuilder.CodePageType.CP774
-      "CP851" -> ICommandBuilder.CodePageType.CP851
-      "CP852" -> ICommandBuilder.CodePageType.CP852
-      "CP855" -> ICommandBuilder.CodePageType.CP855
-      "CP857" -> ICommandBuilder.CodePageType.CP857
-      "CP858" -> ICommandBuilder.CodePageType.CP858
-      "CP860" -> ICommandBuilder.CodePageType.CP860
-      "CP861" -> ICommandBuilder.CodePageType.CP861
-      "CP862" -> ICommandBuilder.CodePageType.CP862
-      "CP863" -> ICommandBuilder.CodePageType.CP863
-      "CP864" -> ICommandBuilder.CodePageType.CP864
-      "CP865" -> ICommandBuilder.CodePageType.CP865
-      "CP866" -> ICommandBuilder.CodePageType.CP866
-      "CP869" -> ICommandBuilder.CodePageType.CP869
-      "CP874" -> ICommandBuilder.CodePageType.CP874
-      "CP928" -> ICommandBuilder.CodePageType.CP928
-      "CP932" -> ICommandBuilder.CodePageType.CP932
-      "CP999" -> ICommandBuilder.CodePageType.CP999
-      "CP1001" -> ICommandBuilder.CodePageType.CP1001
-      "CP1250" -> ICommandBuilder.CodePageType.CP1250
-      "CP1251" -> ICommandBuilder.CodePageType.CP1251
-      "CP1252" -> ICommandBuilder.CodePageType.CP1252
-      "CP2001" -> ICommandBuilder.CodePageType.CP2001
-      "CP3001" -> ICommandBuilder.CodePageType.CP3001
-      "CP3002" -> ICommandBuilder.CodePageType.CP3002
-      "CP3011" -> ICommandBuilder.CodePageType.CP3011
-      "CP3012" -> ICommandBuilder.CodePageType.CP3012
-      "CP3021" -> ICommandBuilder.CodePageType.CP3021
-      "CP3041" -> ICommandBuilder.CodePageType.CP3041
-      "CP3840" -> ICommandBuilder.CodePageType.CP3840
-      "CP3841" -> ICommandBuilder.CodePageType.CP3841
-      "CP3843" -> ICommandBuilder.CodePageType.CP3843
-      "CP3845" -> ICommandBuilder.CodePageType.CP3845
-      "CP3846" -> ICommandBuilder.CodePageType.CP3846
-      "CP3847" -> ICommandBuilder.CodePageType.CP3847
-      "CP3848" -> ICommandBuilder.CodePageType.CP3848
-      "UTF8" -> ICommandBuilder.CodePageType.UTF8
-      "Blank" -> ICommandBuilder.CodePageType.Blank
-      else -> ICommandBuilder.CodePageType.CP998
+      "CP437" -> CodePageType.CP437
+      "CP737" -> CodePageType.CP737
+      "CP772" -> CodePageType.CP772
+      "CP774" -> CodePageType.CP774
+      "CP851" -> CodePageType.CP851
+      "CP852" -> CodePageType.CP852
+      "CP855" -> CodePageType.CP855
+      "CP857" -> CodePageType.CP857
+      "CP858" -> CodePageType.CP858
+      "CP860" -> CodePageType.CP860
+      "CP861" -> CodePageType.CP861
+      "CP862" -> CodePageType.CP862
+      "CP863" -> CodePageType.CP863
+      "CP864" -> CodePageType.CP864
+      "CP865" -> CodePageType.CP865
+      "CP869" -> CodePageType.CP869
+      "CP874" -> CodePageType.CP874
+      "CP928" -> CodePageType.CP928
+      "CP932" -> CodePageType.CP932
+      "CP999" -> CodePageType.CP999
+      "CP1001" -> CodePageType.CP1001
+      "CP1250" -> CodePageType.CP1250
+      "CP1251" -> CodePageType.CP1251
+      "CP1252" -> CodePageType.CP1252
+      "CP2001" -> CodePageType.CP2001
+      "CP3001" -> CodePageType.CP3001
+      "CP3002" -> CodePageType.CP3002
+      "CP3011" -> CodePageType.CP3011
+      "CP3012" -> CodePageType.CP3012
+      "CP3021" -> CodePageType.CP3021
+      "CP3041" -> CodePageType.CP3041
+      "CP3840" -> CodePageType.CP3840
+      "CP3841" -> CodePageType.CP3841
+      "CP3843" -> CodePageType.CP3843
+      "CP3845" -> CodePageType.CP3845
+      "CP3846" -> CodePageType.CP3846
+      "CP3847" -> CodePageType.CP3847
+      "CP3848" -> CodePageType.CP3848
+      "UTF8" -> CodePageType.UTF8
+      "Blank" -> CodePageType.Blank
+      else -> CodePageType.CP998
     }
   }
 
@@ -610,11 +606,11 @@ class FlutterStarPrntPlugin : FlutterPlugin, MethodCallHandler {
 
   private fun getCutPaperAction(cutPaperAction: String): ICommandBuilder.CutPaperAction {
     return when (cutPaperAction) {
-      "FullCut" -> ICommandBuilder.CutPaperAction.FullCut
-      "FullCutWithFeed" -> ICommandBuilder.CutPaperAction.FullCutWithFeed
-      "PartialCut" -> ICommandBuilder.CutPaperAction.PartialCut
-      "PartialCutWithFeed" -> ICommandBuilder.CutPaperAction.PartialCutWithFeed
-      else -> ICommandBuilder.CutPaperAction.PartialCutWithFeed
+      "FullCut" -> CutPaperAction.FullCut
+      "FullCutWithFeed" -> CutPaperAction.FullCutWithFeed
+      "PartialCut" -> CutPaperAction.PartialCut
+      "PartialCutWithFeed" -> CutPaperAction.PartialCutWithFeed
+      else -> CutPaperAction.PartialCutWithFeed
     }
   }
 
@@ -700,12 +696,12 @@ class FlutterStarPrntPlugin : FlutterPlugin, MethodCallHandler {
     printWidth: Int,
     typeface: Typeface
   ): Bitmap {
-    val paint = Paint().apply {
-      this.textSize = textSize
-      this.typeface = typeface
-    }
+    val paint = Paint()
+    paint.textSize = textSize
+    paint.typeface = typeface
+    paint.getTextBounds(printText, 0, printText.length, Rect())
 
-    val textPaint: TextPaint = TextPaint(paint)
+    val textPaint = TextPaint(paint)
     val staticLayout =
       StaticLayout(
         printText,
@@ -720,6 +716,7 @@ class FlutterStarPrntPlugin : FlutterPlugin, MethodCallHandler {
     val bitmap = Bitmap.createBitmap(staticLayout.width, staticLayout.height, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap)
     canvas.drawColor(Color.WHITE)
+    canvas.translate(0f, 0f)
     staticLayout.draw(canvas)
     return bitmap
   }
@@ -733,7 +730,6 @@ class FlutterStarPrntPlugin : FlutterPlugin, MethodCallHandler {
   ) {
     var port: StarIOPort? = null
     var errorPosString = ""
-
     try {
       port = StarIOPort.getPort(portName, portSettings, 10000, applicationContext)
       errorPosString += "Port Opened,"
@@ -744,8 +740,8 @@ class FlutterStarPrntPlugin : FlutterPlugin, MethodCallHandler {
 
       var status: StarPrinterStatus = port.beginCheckedBlock()
       val json: MutableMap<String, Any?> = mutableMapOf()
+      errorPosString += "got status for beginCheck,"
 
-      errorPosString += "got status for begin Check,"
       json["offline"] = status.offline
       json["coverOpen"] = status.coverOpen
       json["cutterError"] = status.cutterError
@@ -773,14 +769,13 @@ class FlutterStarPrntPlugin : FlutterPlugin, MethodCallHandler {
       if (isSuccess) {
         errorPosString += "Writing to port,"
         port.writePort(commands, 0, commands.size)
-        errorPosString += "setting delay End check block,"
-        port.setEndCheckedBlockTimeoutMillis(30000)
-        errorPosString += "doing End check block,"
 
+        errorPosString += "End checked block,"
+        port.setEndCheckedBlockTimeoutMillis(30000)
         try {
           status = port.endCheckedBlock()
         } catch (e: Exception) {
-          errorPosString += "End check block exception ${e},"
+          errorPosString += "EndCheckedBlock exception ${e},"
         }
 
         json["offline"] = status.offline
@@ -806,16 +801,13 @@ class FlutterStarPrntPlugin : FlutterPlugin, MethodCallHandler {
       json["is_success"] = isSuccess
       result.success(json)
     } catch (e: Exception) {
-      result.error("STARIO_PORT_EXCEPTION", (e.message ?: "Unknown") + " Failed After $errorPosString", null)
+      result.error("STARIO_PORT_EXCEPTION", (e.message ?: "") + " Failed After $errorPosString", null)
     } finally {
       if (port != null) {
         try {
           StarIOPort.releasePort(port)
-        } catch (_: Exception) {
-          // ignore
-        }
+        } catch (_: Exception) {}
       }
     }
   }
 }
-```
