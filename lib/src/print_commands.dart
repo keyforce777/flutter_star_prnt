@@ -201,10 +201,14 @@ class PrintCommands {
         alignment: Alignment.center,
         child: repaintBoundary,
       ),
-      configuration: ViewConfiguration(
-        size: logicalSize,
-        devicePixelRatio: 1.0,
-      ),
+final viewConfig = ViewConfiguration(
+  logicalConstraints: BoxConstraints.tight(logicalSize),
+  physicalConstraints: BoxConstraints.tight(
+    Size(logicalSize.width * pixelRatio, logicalSize.height * pixelRatio),
+  ),
+  devicePixelRatio: pixelRatio,
+);
+
     );
 
     final PipelineOwner pipelineOwner = PipelineOwner();
